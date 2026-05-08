@@ -56,22 +56,43 @@ def test_split_line_natural_break():
 
 
 def test_split_line_comma_at_mid_minus_1():
-    # "love," is at position 3 (mid-1 for 8 words) → split after it
+    # "love," at index 3 (mid-1 for 8 words) — still found by broad search
     first, second = _split_line("God sent His love, to heal and restore")
     assert first.endswith("love,")
 
 
-def test_split_line_semicolon_at_mid():
-    # 8 words: mid=4, mid-1=3 → words[3]="died;" → split_at=4 → first ends with "died;"
+def test_split_line_semicolon_near_mid():
+    # "died;" at index 3 (mid-1 for 8 words)
     first, second = _split_line("He lived and died; to buy the pardon")
     assert first.endswith("died;")
 
 
 def test_split_line_comma_takes_priority_over_natural_break():
-    # 8 words: "save," at index 3 (mid-1), "and" at index 4 (mid).
-    # Comma (priority 1) beats natural-break word (priority 2).
+    # "save," at index 3, "and" at index 4 — comma wins
     first, second = _split_line("He came to save, and love the world")
     assert first.endswith("save,")
+
+
+def test_split_line_comma_before_midpoint():
+    # "blessings," is at index 2 (mid-2 for 8 words) — the old code missed this.
+    # New broad search finds it as the closest punctuation to mid.
+    first, second = _split_line("Count your blessings, name them one by one;")
+    assert first == "Count your blessings,"
+    assert second == "name them one by one;"
+
+
+def test_split_line_comma_before_midpoint_variant():
+    first, second = _split_line("Count your blessings, see what God hath done;")
+    assert first == "Count your blessings,"
+    assert second == "see what God hath done;"
+
+
+def test_split_line_leading_comma_ignored():
+    # Comma on the first word → split_at=1 → rejected (< 2 words in first half)
+    # Falls through to midpoint
+    first, second = _split_line("Yes, because He lives and reigns forever more")
+    assert len(first.split()) >= 2
+    assert len(second.split()) >= 2
 
 
 def test_expand_long_lines_short_line_unchanged():
