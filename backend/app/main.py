@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from app.parsing import parse_sections, parse_order
 from app.schemas import GenerateRequest, ValidateResponse
-from app.slides import chunk_section, generate_pdf
+from app.slides import chunk_section, expand_long_lines, generate_pdf
 
 app = FastAPI(title="Church Slide Generator")
 
@@ -31,7 +31,7 @@ def validate(req: GenerateRequest):
 
     missing = [key for key in order if key not in sections]
     slide_count = sum(
-        len(chunk_section(sections[key]))
+        len(chunk_section(expand_long_lines(sections[key])))
         for key in order
         if key in sections
     )

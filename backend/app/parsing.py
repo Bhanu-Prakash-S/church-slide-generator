@@ -1,3 +1,4 @@
+import math
 import re
 
 SECTION_PATTERN = re.compile(r"^\s*\[([^\]]+)\]\s*$", re.MULTILINE)
@@ -21,8 +22,27 @@ def normalize_section_key(name: str) -> str:
         return "O"
     if "intro" in n:
         return "I"
-    # fallback: strip spaces and uppercase
     return re.sub(r"\s+", "", name.strip().upper())
+
+
+def effective_word_count(line: str) -> int:
+    """
+    Count words in a line, but treat short words (≤2 letters) as half-words.
+    Every pair of short words counts as one word in the total.
+
+    Examples:
+        "I am so in love with the Lord"  -> short: I,am,so,in=4 -> ceil(4/2)=2; long: love,with,the,Lord=4 -> 6
+        "We pray for blessings we pray"  -> short: We,we=2 -> 1; long: pray,for,blessings,pray=4 -> 5
+    """
+    short = 0
+    long_ = 0
+    for w in line.split():
+        core = re.sub(r"[^a-zA-Z]", "", w)
+        if len(core) <= 2:
+            short += 1
+        else:
+            long_ += 1
+    return long_ + math.ceil(short / 2)
 
 
 def parse_sections(lyrics_text: str) -> dict[str, list[str]]:
@@ -38,8 +58,6 @@ def parse_sections(lyrics_text: str) -> dict[str, list[str]]:
         ...
     """
     parts = re.split(SECTION_PATTERN, lyrics_text)
-    # After splitting on section headers the list looks like:
-    # ['', 'Verse 1', 'line one\nline two\n', 'Chorus', '...', ...]
     result: dict[str, list[str]] = {}
     for i in range(1, len(parts), 2):
         key = normalize_section_key(parts[i].strip())

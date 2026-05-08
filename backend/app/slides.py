@@ -10,6 +10,16 @@ import img2pdf
 from PIL import Image, ImageDraw, ImageFont
 
 from app import config
+from app.parsing import effective_word_count
+
+# Reused for text measurement — no need to create a real image just to call textbbox
+_DUMMY_DRAW = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+
+# Words that mark a natural phrase boundary for line splitting
+_NATURAL_BREAK_WORDS = {"and", "but", "for", "when", "even", "like", "or", "so", "yet", "nor"}
+
+# How many font sizes below MAX to try before deciding a line needs splitting
+_FONT_TRIAL_STEPS = 4
 
 
 # ---------- Background ----------
@@ -45,7 +55,7 @@ def load_background() -> Image.Image:
     return _make_gradient_background()
 
 
-# ---------- Text layout ----------
+# ---------- Text measurement ----------
 
 def _measure_text_block(
     lines: list[str], font: ImageFont.FreeTypeFont, draw: ImageDraw.ImageDraw
@@ -60,22 +70,86 @@ def _measure_text_block(
         w = bbox[2] - bbox[0]
         if w > max_w:
             max_w = w
-    # Total height: N line-heights minus the extra spacing on the last line
     total_h = line_h * len(lines) - int(font.size * (config.LINE_SPACING - 1))
     return max_w, total_h
 
 
+def _line_pixel_width(line: str, font_size: int) -> int:
+    """Pixel width of a single line at the given font size (includes stroke)."""
+    font = ImageFont.truetype(str(config.FONT_PATH), font_size)
+    bbox = _DUMMY_DRAW.textbbox((0, 0), line, font=font, stroke_width=config.STROKE_WIDTH)
+    return bbox[2] - bbox[0]
+
+
 def _fit_font(
-    lines: list[str], draw: ImageDraw.ImageDraw
+    lines: list[str],
+    draw: ImageDraw.ImageDraw,
+    max_size: int = config.MAX_FONT_SIZE,
 ) -> ImageFont.FreeTypeFont:
     """Largest font size (within bounds) where all lines fit in the text box."""
     font_path = str(config.FONT_PATH)
-    for size in range(config.MAX_FONT_SIZE, config.MIN_FONT_SIZE - 1, -2):
+    for size in range(max_size, config.MIN_FONT_SIZE - 1, -2):
         font = ImageFont.truetype(font_path, size)
         w, h = _measure_text_block(lines, font, draw)
         if w <= config.TEXT_BOX_W and h <= config.TEXT_BOX_H:
             return font
     return ImageFont.truetype(font_path, config.MIN_FONT_SIZE)
+
+
+# ---------- Line expansion (long-line splitting) ----------
+
+def _split_line(line: str) -> tuple[str, str]:
+    """
+    Split a line near its midpoint into two parts, first part gets more words.
+    Prefers splitting just before a natural-break word (and/but/for/etc.)
+    if one falls within 1 position of the midpoint.
+    """
+    words = line.split()
+    n = len(words)
+    # ceil so first half gets the extra word when n is odd
+    mid = -(-n // 2)  # equivalent to math.ceil(n / 2)
+
+    # Check mid and mid+1 as potential start-of-second-half positions.
+    # mid-1 would make first half shorter than second — not allowed.
+    for split_at in [mid, min(mid + 1, n - 1)]:
+        import re as _re
+        word_core = _re.sub(r"[^a-zA-Z]", "", words[split_at]).lower()
+        if word_core in _NATURAL_BREAK_WORDS:
+            mid = split_at
+            break
+
+    return " ".join(words[:mid]), " ".join(words[mid:])
+
+
+def _expand_line(line: str) -> list[str]:
+    """
+    If a line's effective word count exceeds 6 and it doesn't fit within the
+    text box at MAX_FONT_SIZE down to MAX_FONT_SIZE - FONT_TRIAL_STEPS,
+    split it. Recursively checks each half so very long lines keep splitting.
+    """
+    if effective_word_count(line) <= 6:
+        return [line]
+
+    # Try the line at MAX_FONT_SIZE down to MAX - FONT_TRIAL_STEPS
+    min_trial = config.MAX_FONT_SIZE - _FONT_TRIAL_STEPS
+    for size in range(config.MAX_FONT_SIZE, min_trial - 1, -1):
+        if _line_pixel_width(line, size) <= config.TEXT_BOX_W:
+            return [line]  # fits — slide-level _fit_font will pick the right size
+
+    # Still too wide — split and check each half recursively
+    first, second = _split_line(line)
+    return _expand_line(first) + _expand_line(second)
+
+
+def expand_long_lines(lines: list[str]) -> list[str]:
+    """
+    Pre-process a section's lines: any line that is too long to fit at the
+    standard font size gets split into two shorter lines.
+    """
+    result = []
+    for line in lines:
+        result.extend(_expand_line(line))
+    return result
 
 
 # ---------- Slide rendering ----------
@@ -84,7 +158,10 @@ def render_slide(lines: list[str], bg: Image.Image) -> Image.Image:
     """Render one slide: copy bg, center the text block, return the image."""
     img = bg.copy()
     draw = ImageDraw.Draw(img)
-    font = _fit_font(lines, draw)
+
+    # Short slides (< 3 lines) get a 2px font boost so they fill more of the frame
+    max_font = config.MAX_FONT_SIZE + 2 if len(lines) < 3 else config.MAX_FONT_SIZE
+    font = _fit_font(lines, draw, max_size=max_font)
 
     line_h = int(font.size * config.LINE_SPACING)
     total_h = line_h * len(lines) - int(font.size * (config.LINE_SPACING - 1))
@@ -111,8 +188,10 @@ def render_slide(lines: list[str], bg: Image.Image) -> Image.Image:
 
 def chunk_section(lines: list[str], lines_per_slide: int = config.LINES_PER_SLIDE) -> list[list[str]]:
     """
-    Split a section's lines into slide-sized chunks.
-    Rebalances the last chunk if it would be a single orphaned line (4+1 -> 3+2).
+    Split a section's lines into slides of 3–4 lines each.
+    Rebalances the tail to avoid orphan slides:
+      - last chunk has 1 line → 4+1 becomes 3+2
+      - last chunk has 2 lines → 4+2 becomes 3+3
     """
     if not lines:
         return []
@@ -121,8 +200,12 @@ def chunk_section(lines: list[str], lines_per_slide: int = config.LINES_PER_SLID
 
     chunks = [lines[i : i + lines_per_slide] for i in range(0, len(lines), lines_per_slide)]
 
-    if len(chunks) >= 2 and len(chunks[-1]) == 1 and len(chunks[-2]) >= 3:
-        chunks[-1].insert(0, chunks[-2].pop())
+    if len(chunks) >= 2:
+        last, prev = chunks[-1], chunks[-2]
+        if len(last) == 1 and len(prev) >= 3:
+            last.insert(0, prev.pop())
+        elif len(last) == 2 and len(prev) >= 4:
+            last.insert(0, prev.pop())
 
     return chunks
 
@@ -136,8 +219,8 @@ def generate_pdf(
 ) -> Path:
     """
     Render all slides for the given order and write a PDF to output_path.
+    Applies long-line expansion before chunking so every slide is readable.
     Skips (with a warning) any order entry whose section key isn't in sections.
-    Returns the output path.
     """
     if not config.FONT_PATH.exists():
         raise FileNotFoundError(
@@ -146,7 +229,12 @@ def generate_pdf(
         )
 
     bg = load_background()
-    section_chunks = {key: chunk_section(lines) for key, lines in sections.items()}
+
+    # Expand long lines first, then chunk
+    section_chunks = {
+        key: chunk_section(expand_long_lines(lines))
+        for key, lines in sections.items()
+    }
 
     img_bytes: list[bytes] = []
     for key in order:

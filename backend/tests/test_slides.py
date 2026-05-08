@@ -1,41 +1,88 @@
 from pathlib import Path
 import tempfile
 from app.parsing import parse_sections, parse_order
-from app.slides import chunk_section, generate_pdf
+from app.slides import chunk_section, expand_long_lines, _split_line, generate_pdf
 
 FIXTURE = Path(__file__).parent / "fixtures" / "because_he_lives.txt"
 ORDER_STR = "V1, C, V2, C, V3, C"
 
 
 def test_chunk_section_short():
-    # Sections with <= 4 lines stay as one slide
     assert chunk_section(["a", "b", "c"]) == [["a", "b", "c"]]
     assert chunk_section(["a", "b", "c", "d"]) == [["a", "b", "c", "d"]]
 
 
-def test_chunk_section_rebalance():
-    # 5 lines: would be [4, 1] — should rebalance to [3, 2]
-    lines = ["a", "b", "c", "d", "e"]
-    chunks = chunk_section(lines)
-    assert len(chunks) == 2
-    assert len(chunks[0]) == 3
-    assert len(chunks[1]) == 2
+def test_chunk_section_rebalance_4_plus_1():
+    # 5 lines: [4, 1] -> [3, 2]
+    chunks = chunk_section(["a", "b", "c", "d", "e"])
+    assert [len(c) for c in chunks] == [3, 2]
+
+
+def test_chunk_section_rebalance_4_plus_2():
+    # 6 lines: [4, 2] -> [3, 3]
+    chunks = chunk_section(["a", "b", "c", "d", "e", "f"])
+    assert [len(c) for c in chunks] == [3, 3]
+
+
+def test_chunk_section_rebalance_10_lines():
+    # 10 lines: [4, 4, 2] -> [4, 3, 3]
+    chunks = chunk_section([str(i) for i in range(10)])
+    assert [len(c) for c in chunks] == [4, 3, 3]
 
 
 def test_chunk_section_even():
-    # 8 lines: clean [4, 4]
     lines = [str(i) for i in range(8)]
     chunks = chunk_section(lines)
     assert chunks == [["0", "1", "2", "3"], ["4", "5", "6", "7"]]
+
+
+def test_split_line_even():
+    first, second = _split_line("one two three four five six seven eight")
+    assert first == "one two three four"
+    assert second == "five six seven eight"
+
+
+def test_split_line_odd():
+    # 7 words -> 4 + 3
+    first, second = _split_line("one two three four five six seven")
+    assert len(first.split()) == 4
+    assert len(second.split()) == 3
+
+
+def test_split_line_natural_break():
+    # "and" falls at position 4 (exactly mid for 8 words) — should split there
+    first, second = _split_line("He came to love and heal the world")
+    assert second.startswith("and")
+
+
+def test_expand_long_lines_short_line_unchanged():
+    # 6 effective words — must not be split
+    lines = expand_long_lines(["I am so in love with the Lord"])
+    assert len(lines) == 1
+
+
+def test_expand_long_lines_long_line_split():
+    # A clearly long line that won't fit at MAX - 4 px
+    long_line = "Blessed are those who hunger and thirst for righteousness for they will be filled"
+    result = expand_long_lines([long_line])
+    assert len(result) > 1
+    # All parts should be shorter than the original
+    for part in result:
+        assert len(part) < len(long_line)
+
+
+def test_expand_long_lines_preserves_short_sections():
+    # Lines with ≤ 6 effective words are left alone
+    lines = ["Because He lives", "I can face tomorrow"]
+    assert expand_long_lines(lines) == lines
 
 
 def test_slide_count_because_he_lives():
     lyrics = FIXTURE.read_text(encoding="utf-8")
     sections = parse_sections(lyrics)
     order = parse_order(ORDER_STR)
-
-    # Each section is 8 lines -> 2 slides. Order has 6 entries -> 12 slides.
-    total = sum(len(chunk_section(sections[k])) for k in order)
+    # All lines in Because He Lives are short — no expansion expected
+    total = sum(len(chunk_section(expand_long_lines(sections[k]))) for k in order)
     assert total == 12
 
 
@@ -49,5 +96,4 @@ def test_generate_pdf_creates_file():
         result = generate_pdf(sections, order, out)
         assert result.exists()
         assert result.stat().st_size > 0
-        # PDF magic bytes
         assert result.read_bytes()[:4] == b"%PDF"
