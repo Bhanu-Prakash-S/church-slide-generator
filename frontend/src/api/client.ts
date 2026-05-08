@@ -1,3 +1,7 @@
+// In dev, VITE_API_URL is unset so API_BASE is '' and Vite's proxy rewrites /api → localhost:8000.
+// In production, VITE_API_URL is set to the Railway backend URL (e.g. https://your-app.railway.app).
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
 export interface ValidateResponse {
   valid: boolean
   sections_found: string[]
@@ -10,7 +14,7 @@ export async function validateSlides(
   lyrics: string,
   order: string
 ): Promise<ValidateResponse> {
-  const res = await fetch('/api/validate', {
+  const res = await fetch(`${API_BASE}/api/validate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ lyrics, order }),
@@ -24,7 +28,7 @@ export async function generateSlides(
   order: string,
   filename: string
 ): Promise<Blob> {
-  const res = await fetch('/api/generate-slides', {
+  const res = await fetch(`${API_BASE}/api/generate-slides`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ lyrics, order, filename }),

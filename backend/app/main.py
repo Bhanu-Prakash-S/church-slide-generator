@@ -1,3 +1,4 @@
+import os
 import tempfile
 from pathlib import Path
 
@@ -11,9 +12,17 @@ from app.slides import chunk_section, expand_long_lines, generate_pdf
 
 app = FastAPI(title="Church Slide Generator")
 
+# ALLOWED_ORIGINS env var holds a comma-separated list of frontend URLs.
+# Defaults to localhost for development. Set it in Railway/Vercel to the
+# production frontend URL once you have it.
+_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://localhost:3000",
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[o.strip() for o in _origins],
     allow_methods=["*"],
     allow_headers=["*"],
 )
