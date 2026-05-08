@@ -4,7 +4,7 @@
 
 A web app that turns section-marked lyrics and a performance order string into church song slides as a PDF — replacing a 15–30 minute weekly Canva + iLovePDF workflow.
 
-**[Live demo →](https://church-slide-generator.vercel.app)** *(coming soon)*
+**[Live demo →](https://church-slide-generator.vercel.app)**
 
 ---
 
