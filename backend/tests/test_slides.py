@@ -55,6 +55,25 @@ def test_split_line_natural_break():
     assert second.startswith("and")
 
 
+def test_split_line_comma_at_mid_minus_1():
+    # "love," is at position 3 (mid-1 for 8 words) → split after it
+    first, second = _split_line("God sent His love, to heal and restore")
+    assert first.endswith("love,")
+
+
+def test_split_line_semicolon_at_mid():
+    # 8 words: mid=4, mid-1=3 → words[3]="died;" → split_at=4 → first ends with "died;"
+    first, second = _split_line("He lived and died; to buy the pardon")
+    assert first.endswith("died;")
+
+
+def test_split_line_comma_takes_priority_over_natural_break():
+    # 8 words: "save," at index 3 (mid-1), "and" at index 4 (mid).
+    # Comma (priority 1) beats natural-break word (priority 2).
+    first, second = _split_line("He came to save, and love the world")
+    assert first.endswith("save,")
+
+
 def test_expand_long_lines_short_line_unchanged():
     # 6 effective words — must not be split
     lines = expand_long_lines(["I am so in love with the Lord"])

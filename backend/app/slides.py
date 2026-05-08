@@ -4,6 +4,7 @@ Core slide engine: chunking, rendering, and PDF assembly.
 
 import io
 import random
+import re
 from pathlib import Path
 
 import img2pdf
@@ -101,23 +102,31 @@ def _fit_font(
 def _split_line(line: str) -> tuple[str, str]:
     """
     Split a line near its midpoint into two parts, first part gets more words.
-    Prefers splitting just before a natural-break word (and/but/for/etc.)
-    if one falls within 1 position of the midpoint.
+
+    Priority order:
+    1. Comma or semicolon on a word at mid-1 or mid → split after that word
+       (punctuation marks end of a phrase, so it's the natural boundary)
+    2. Natural-break word (and/but/for/etc.) at mid or mid+1 → split before it
+    3. Exact midpoint
     """
     words = line.split()
     n = len(words)
-    # ceil so first half gets the extra word when n is odd
-    mid = -(-n // 2)  # equivalent to math.ceil(n / 2)
+    mid = -(-n // 2)  # ceil(n/2) — first half gets the extra word when n is odd
 
-    # Check mid and mid+1 as potential start-of-second-half positions.
-    # mid-1 would make first half shorter than second — not allowed.
+    # Priority 1: trailing comma or semicolon near the midpoint
+    for k in [mid - 1, mid]:
+        if 0 <= k < n and words[k] and words[k][-1] in (",", ";"):
+            split_at = k + 1
+            if 0 < split_at < n:  # both halves must be non-empty
+                return " ".join(words[:split_at]), " ".join(words[split_at:])
+
+    # Priority 2: natural-break word starting the second half
     for split_at in [mid, min(mid + 1, n - 1)]:
-        import re as _re
-        word_core = _re.sub(r"[^a-zA-Z]", "", words[split_at]).lower()
+        word_core = re.sub(r"[^a-zA-Z]", "", words[split_at]).lower()
         if word_core in _NATURAL_BREAK_WORDS:
-            mid = split_at
-            break
+            return " ".join(words[:split_at]), " ".join(words[split_at:])
 
+    # Default: exact midpoint
     return " ".join(words[:mid]), " ".join(words[mid:])
 
 
