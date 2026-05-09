@@ -1,3 +1,8 @@
+const PRESETS = [
+  { label: "Chorus Theme", value: "V1, C, V2, C, V3, C" },
+  { label: "Hymn",         value: "V1, V2, V3" },
+]
+
 interface Props {
   value: string
   onChange: (val: string) => void
@@ -12,6 +17,18 @@ export default function OrderInput({ value, onChange }: Props) {
           comma-separated section keys
         </span>
       </label>
+      <div className="flex gap-2">
+        {PRESETS.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            onClick={() => onChange(p.value)}
+            className="rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
       <input
         type="text"
         value={value}
