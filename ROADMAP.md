@@ -9,7 +9,7 @@ Don't move to the next until the current one passes review.
 
 - **v1.0 — Complete and deployed.** Milestones 0–5 shipped.
   Live at: https://song-slides-generator.vercel.app (frontend) + Railway (backend)
-- **Now building: v1.1 — Smart Input.** Start at Milestone 6.
+- **v1.1 — In progress.** Milestones 6 and 7 shipped. **Resume at Milestone 8.**
 
 ---
 
@@ -40,25 +40,24 @@ Deployed to Railway (backend) + Vercel (frontend). README with architecture, tec
 
 ---
 
-## 🔨 IN PROGRESS — v1.1: Smart Input
-
-The problem v1.1 solves: users have to manually add `[Verse 1]`, `[Chorus]`, etc. to lyrics before the tool works. This is friction. v1.1 eliminates it with a database of known songs + AI fallback.
+## ✅ COMPLETED — v1.1 (partial)
 
 ### Architecture decisions made
 
 **Second Brain (English song database)**
-- The project has a `assets/Songs Book.pdf` — a 438-page hymnal.
-- English songs start at ~page 246, run to ~page 430. ~150 songs total.
-- English text extracts cleanly from the PDF (text-based, not scanned).
-- Telugu songs (~pages 1–245) use a legacy custom font encoding — text comes out garbled. Deferred to v1.2.
-- One-time extraction script builds a JSON database: `{ title, number, lyrics, sections, source: "book" }`.
+- The project has `assets/Songs Book.pdf` — a 438-page hymnal.
+- English songs span pages 234–417 (0-indexed: 233–417). Two collections: traditional hymns (pp 234–355) and contemporary worship (pp 356–417). 298 songs total.
+- English text extracts cleanly via pdfplumber. Telugu songs (~pp 1–233) use legacy custom font encoding — garbled, deferred.
+- One-time extraction script builds a JSON database per entry: `{ number, title, title_normalized, sections, source, page }`.
 - `source` flag: `"book"` = extracted from PDF, `"manual"` = overridden by user. Manual entries are never overwritten on re-extraction.
+- Paragraph detection uses y-coordinate gaps (not blank lines). Dual threshold: traditional ≥ 16px, contemporary ≥ 21px.
+- `smart_split()` resolves page-boundary verse merges without breaking genuine 8-line stanzas.
 
 **Detect Sections approach**
 - When user clicks "Detect Sections": fuzzy-match pasted lyrics against the database first.
 - If match found (confidence > 85%): apply known section structure instantly. Free, instant, 100% accurate.
 - If no match (Telugu, or song not in book): fall back to Claude Haiku 4.5 for AI-based structure detection.
-- Claude Haiku analyzes the lyrics text structurally — it does NOT search the internet. It reads line grouping, repetition patterns, and rhyme scheme to infer sections.
+- Claude Haiku analyzes lyrics structurally (line grouping, repetition, rhyme scheme) — no internet access.
 - Cost estimate for AI fallback: ~$0.003 per song. 100 songs ≈ $0.30.
 
 **Performance order presets**
@@ -67,46 +66,45 @@ The problem v1.1 solves: users have to manually add `[Verse 1]`, `[Chorus]`, etc
 
 ---
 
-### Milestone 6: Performance Order Presets
+### Milestone 6: Performance Order Presets ✅
 **Goal:** Two preset chips above the performance order input. One click fills the order string.
 
-**Changes:**
-- `frontend/src/components/OrderInput.tsx` — add two preset buttons above the text input.
+**Changes made:**
+- `frontend/src/components/OrderInput.tsx` — added two rounded chip buttons above the text input.
   - "Chorus Theme" fills `V1, C, V2, C, V3, C`
   - "Hymn" fills `V1, V2, V3`
-- No backend changes.
 
-**Done when:** Clicking each preset fills the order field correctly. Manual typing still works.
-
-**Commit:** `feat(frontend): performance order preset chips`
+**Commit:** `feat(frontend): performance order preset chips` (c59beb9)
 
 ---
 
-### Milestone 7: English Song Database
+### Milestone 7: English Song Database ✅
 **Goal:** A clean, searchable JSON database of all English songs extracted from the PDF.
 
-**Changes:**
-- New script: `backend/scripts/extract_songs.py`
-  - Reads `assets/Songs Book.pdf` pages 246–438 using `pdfplumber`
-  - Parses song number, title, verses, and chorus
-  - Outputs `backend/assets/songs_db.json`
-- Schema per entry:
+**Changes made:**
+- `backend/scripts/extract_songs.py` — one-time extraction script. Run from repo root: `python backend/scripts/extract_songs.py`. Requires `pdfplumber` (`pip install pdfplumber`).
+- `backend/assets/songs_db.json` — 298 English songs. Committed as a static asset.
+- Actual schema per entry (no `lyrics` field — sections only):
   ```json
   {
-    "id": 16,
+    "number": 16,
     "title": "Amazing Grace",
     "title_normalized": "amazing grace",
-    "lyrics": "[Verse 1]\nAmazing grace...\n\n[Chorus]\n...",
     "sections": { "V1": ["Amazing grace!", "How sweet the sound"], "C": ["..."] },
     "source": "book",
     "page": 246
   }
   ```
-- `songs_db.json` is committed to the repo (it's a static asset, not a build artifact).
 
-**Done when:** Script runs cleanly, all ~150 English songs extracted with correct titles and section structure. Spot-check 10 songs manually.
+**Commit:** `feat(backend): one-time English song extraction script + songs_db.json` (6cf7ff6)
 
-**Commit:** `feat(backend): one-time English song extraction script + songs_db.json`
+---
+
+## 🔨 IN PROGRESS — v1.1: Smart Input
+
+The problem v1.1 solves: users have to manually add `[Verse 1]`, `[Chorus]`, etc. to lyrics before the tool works. This is friction. v1.1 eliminates it with a database of known songs + AI fallback.
+
+**Resume here: Milestone 8.**
 
 ---
 
